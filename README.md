@@ -44,3 +44,17 @@ tokens:
 
 package main
 ```
+
+For this to work, you need to have a consul cluster configured with ACL enabled. Imagine a simple acl.json file in your configuration directory e.g.
+
+```
+{
+  "acl_datacenter": "dc1",
+  "acl_default_policy": "deny",
+  "acl_down_policy": "allow",
+  "acl_master_token": "3f53b9dc-a577-4b07-873c-0216bd9b8696"
+}
+```
+
+Whatever value you use for the acl_master_token needs to reside in your yaml file.
+
