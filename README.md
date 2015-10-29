@@ -27,6 +27,20 @@ acl_master_token: 3f53b9dc-a577-4b07-873c-0216bd9b8696
 # Tokens to create. You can generate new IDs with the command line "uuidgen" program
 # See https://www.consul.io/docs/internals/acl.html
 tokens:
+  - # handle setting access for the default token
+    department: Common
+    team: Default
+    token: anonymous 
+    name: Anonymous
+    type: client
+    # IF set to true, the code only issues a delete
+    remove: false  
+    keys:
+      - {name: "", value: deny}
+    services:
+      - {name: "_rexec", value: deny}
+      - {name: "", value: deny}
+      - {name: "consul", value: deny}
   -
     department: XPS
     team: DU
