@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
-	yaml "gopkg.in/yaml.v2"
+	log "github.com/russellsimpkins/consul-acl-mgr/Godeps/_workspace/src/github.com/Sirupsen/logrus"
+	yaml "github.com/russellsimpkins/consul-acl-mgr/Godeps/_workspace/src/gopkg.in/yaml.v2"
 )
 
 // I need something that can read in YAML files and generate my Consul ACLs with known UUIDs
@@ -45,11 +45,32 @@ type ConsulACL struct {
 	Rules string
 }
 
+// Consul service definition
+type ConsulService struct {
+	Id      string
+	Service string
+	Address string
+	Port    uint64
+	Tags    []string
+}
+
+// Consul Node definition
+type ConsulNode struct {
+	Node       string
+	Address    string
+	Datacenter string
+	Service    ConsulService
+}
+
 // the base configurion in our YAML file
 type Config struct {
-	Consul string `yaml:"consul_cluster"`   // which IP/DNS address should we be talking to
-	Token  string `yaml:"acl_master_token"` // we need the master token to keep things up to date
-	Tokens []ACL
+	Consul     string `yaml:"consul_cluster"`   // which IP/DNS address should we be talking to
+	Token      string `yaml:"acl_master_token"` // we need the master token to keep things up to date
+	UpdateAcl  bool   `yaml:"update_acl"`
+	AddNodes   bool   `yaml:"add_nodes"`
+	Datacenter string
+	Nodes      []ConsulNode
+	Tokens     []ACL
 }
 
 // struct to output Consul ACL Rules as JSON
@@ -115,6 +136,54 @@ func (c *Config) RulesString(token ACL) (result string, err error) {
 	}
 	result = string(body)
 	return
+}
+
+// call this fuction to add nodes
+func (c *Config) AddConsulNodes() (err error) {
+
+	// iterate over all nodes and take appropriate action
+	for _, node := range c.Nodes {
+		var (
+			request *http.Request
+			client  *http.Client
+			resp    *http.Response
+			url     string
+			putdata []byte
+		)
+		client = &http.Client{
+			CheckRedirect: nil,
+		}
+		url = fmt.Sprintf("http://%s/v1/catalog/register?token=%s", c.Consul, c.Token)
+		log.Debugf("Attempting to register the service using URL: %s", url)
+		node.Datacenter = c.Datacenter
+		putdata, err := json.MarshalIndent(node, "", "	")
+		if err != nil {
+			log.Fatalf("Unable to create JSON from our structure. This could only be caused by a bug in your yaml: %s", err)
+			return err
+		}
+
+		log.Debugf("The token data to PUT: %s", string(putdata))
+		request, err = http.NewRequest("PUT", url, nil)
+		if err != nil {
+			log.Warnf("Unable to register the node. Err: %s", err)
+			return err
+		}
+		reqdata := strings.NewReader(string(putdata))
+		request, err = http.NewRequest("PUT", url, reqdata)
+
+		resp, err = client.Do(request)
+
+		if err != nil {
+			log.Fatalf("There was a problem calling the Consul server: %s", err)
+			return err
+		}
+		if resp.StatusCode != 200 {
+			log.Fatalf("There was a problem calling the Consul server. Response Code %i", resp.StatusCode)
+			return err
+		}
+
+	}
+	return err
 }
 
 // does the logic to set the tokens on the Consul cluster
@@ -230,9 +299,22 @@ func main() {
 		return
 	}
 
-	err = cparser.SetConsulACL()
+	if cparser.UpdateAcl {
+		log.Debug("Set Consul ACL")
+		err = cparser.SetConsulACL()
 
-	if err != nil {
-		log.Error("There were problems updating the consul server: ", err)
+		if err != nil {
+			log.Error("There were problems updating the consul server: ", err)
+		}
 	}
+
+	if cparser.AddNodes {
+		log.Debug("Add node(s) to Consul.")
+		err = cparser.AddConsulNodes()
+
+		if err != nil {
+			log.Error("There were problems adding nodes to consul")
+		}
+	}
+	log.Debug("All done.")
 }
