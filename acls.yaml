@@ -1,9 +1,9 @@
 # THIS IS A SAMPLE/EXAMPLE
 # The IP or DNS:PORT combination where your consul master is running
-consul_cluster: platform-consul-v1.dev.iad2.nyt.net:80
+consul_cluster: 192.168.33.10:8500
 
 # Datacenter is used to register nodes
-datacenter: iad2
+datacenter: dc1
 
 # the acl master token - without this you can't manage ACLs
 # DON'T SIMPLY USE THIS VALUE - GENERATE A NEW UUID !!!
@@ -19,7 +19,7 @@ nodes:
     node: du-common-db01
     address: 10.213.37.6
     service:
-        id: du-common-db01
+        id: du-common-db02
         service: du-mysql-db
         address: 10.213.37.6
         port: 3306
@@ -30,13 +30,24 @@ nodes:
     node: du-common-db02
     address: 10.213.37.9
     service:
-        id: du-common-db02
+        id: du-common-db01
         service: du-mysql-db
         address: 10.213.37.9
         port: 3306
         tags:
-          - master
+          - slave
           - mysql
+  -
+    node: du-common-db03
+    address: 10.213.37.10
+    service:
+        id: du-common-db03
+        service: du-mysql-db
+        address: 10.213.37.10
+        port: 3306
+        tags:
+          - slave
+          - mysql          
 
 # Tokens to create. You can generate new tokens with
 # the command line "uuidgen" program
@@ -99,3 +110,5 @@ tokens:
     services:
       - {name: "xps-ugc-", value: write}
       - {name: "", value: read}
+
+
