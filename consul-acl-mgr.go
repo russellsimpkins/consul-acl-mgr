@@ -21,8 +21,8 @@ import (
 
 // for name value pairs we use in the keys and services for ACLs
 type Pair struct {
-	Name  string `yaml: name`
-	Value string `yaml: value`
+	Name  string `yaml:"name"`
+	Value string `yaml:"value"`
 }
 
 // an ACL entry in our yaml file
@@ -64,13 +64,15 @@ type ConsulNode struct {
 
 // the base configurion in our YAML file
 type Config struct {
-	Consul     string `yaml:"consul_cluster"`   // which IP/DNS address should we be talking to
-	Token      string `yaml:"acl_master_token"` // we need the master token to keep things up to date
+	Consul     string `yaml:"consul_cluster"` // which IP/DNS address should we be talking to
+	Token      string `yaml:"token"`          // we need the master token to keep things up to date
 	UpdateAcl  bool   `yaml:"update_acl"`
 	AddNodes   bool   `yaml:"add_nodes"`
+	AddKeys    bool   `yaml:"add_keys"`
 	Datacenter string
 	Nodes      []ConsulNode
 	Tokens     []ACL
+	KeyValues  []Pair `yaml:"keys"`
 }
 
 // struct to output Consul ACL Rules as JSON
@@ -85,6 +87,8 @@ type ACLParser interface {
 	ParseYaml(yamlFile string) (err error) // parse the yaml file in the directory to read in all ACL information
 	SetConsulACL() (err error)             // update consul via the API - should we remove all ACLs, default is false
 	RulesString(token ACL) (json string, err error)
+	AddConsulNodes() (err error)
+	AddConsulKvPairs() (err error)
 }
 
 // this function reads a yaml file to populate our Config struct
@@ -156,7 +160,8 @@ func (c *Config) AddConsulNodes() (err error) {
 		url = fmt.Sprintf("http://%s/v1/catalog/register?token=%s", c.Consul, c.Token)
 		log.Debugf("Attempting to register the service using URL: %s", url)
 		node.Datacenter = c.Datacenter
-		putdata, err := json.MarshalIndent(node, "", "	")
+		//putdata, err := json.MarshalIndent(node, "", "	")
+		putdata, err := json.Marshal(node)
 		if err != nil {
 			log.Fatalf("Unable to create JSON from our structure. This could only be caused by a bug in your yaml: %s", err)
 			return err
@@ -169,6 +174,45 @@ func (c *Config) AddConsulNodes() (err error) {
 			return err
 		}
 		reqdata := strings.NewReader(string(putdata))
+		request, err = http.NewRequest("PUT", url, reqdata)
+
+		resp, err = client.Do(request)
+
+		if err != nil {
+			log.Fatalf("There was a problem calling the Consul server: %s", err)
+			return err
+		}
+		if resp.StatusCode != 200 {
+			log.Fatalf("There was a problem calling the Consul server. Response Code %i", resp.StatusCode)
+			return err
+		}
+
+	}
+	return err
+}
+
+// call this fuction to add nodes
+func (c *Config) AddConsulKvPairs() (err error) {
+	// iterate over all nodes and take appropriate action
+	for _, pair := range c.KeyValues {
+		var (
+			request *http.Request
+			client  *http.Client
+			resp    *http.Response
+			url     string
+		)
+		client = &http.Client{
+			CheckRedirect: nil,
+		}
+		url = fmt.Sprintf("http://%s/v1/kv/%s?token=%s", c.Consul, pair.Name, c.Token)
+		log.Debugf("Attempting to register the service using URL: %s", url)
+		log.Debugf("The token data to PUT: %s", pair.Value)
+		request, err = http.NewRequest("PUT", url, nil)
+		if err != nil {
+			log.Warnf("Unable to register the node. Err: %s", err)
+			return err
+		}
+		reqdata := strings.NewReader(pair.Value)
 		request, err = http.NewRequest("PUT", url, reqdata)
 
 		resp, err = client.Do(request)
@@ -312,6 +356,14 @@ func main() {
 		log.Debug("Add node(s) to Consul.")
 		err = cparser.AddConsulNodes()
 
+		if err != nil {
+			log.Error("There were problems adding nodes to consul")
+		}
+	}
+	if cparser.AddKeys {
+		log.Debug("Adding key value pair(s) to Consul.")
+
+		err = cparser.AddConsulKvPairs()
 		if err != nil {
 			log.Error("There were problems adding nodes to consul")
 		}
